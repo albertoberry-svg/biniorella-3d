@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Biniorella 3D</title>
+<style>
+:root{--bg:#0e1116;--panel:rgba(18,22,30,.86);--text:#e8ecf2;--muted:#9aa4b2;--line:rgba(255,255,255,.12);--accent:#7cc4ff}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+#c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#panel{position:fixed;top:16px;left:16px;width:360px;max-width:calc(100vw - 32px);background:var(--panel);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:14px;padding:16px;z-index:2}
+h1{font-size:17px;margin:0 0 2px}
+.sub{color:var(--muted);font-size:12px;margin-bottom:12px}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin:6px 0 12px}
+th,td{padding:4px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--muted);font-weight:500}
+.dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+tfoot td{font-weight:600;border-bottom:none}
+.pill{display:inline-block;background:#d62f2f;color:#fff;font-size:10px;font-weight:700;letter-spacing:.04em;padding:1px 6px;border-radius:4px;margin-left:4px;vertical-align:1px}
+tr.sold td{color:var(--muted)}
+.sea{font-size:12.5px;color:#9fd8ff;margin:-4px 0 6px}
+.row{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+button{flex:1;min-width:0;background:rgba(255,255,255,.06);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px 8px;font:inherit;font-size:12.5px;cursor:pointer}
+button.on{background:rgba(124,196,255,.18);border-color:var(--accent);color:#fff}
+label.sl{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);margin-top:6px}
+label.sl input{flex:1}
+.foot{color:var(--muted);font-size:11px;margin-top:10px}
+#toggle{display:none}
+#open{display:none}
+#load{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:5;background:#0e1116;color:#cfd6df;font-size:14px;transition:opacity .6s}
+#load.done{opacity:0;pointer-events:none}
+.embed #panel{display:none}
+.embed #c{touch-action:pan-y;cursor:pointer}
+.embed #open{display:flex;align-items:center;gap:8px;position:fixed;right:12px;bottom:12px;z-index:3;background:rgba(14,17,22,.82);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:8px 14px;font-size:13px;font-weight:600;pointer-events:none;backdrop-filter:blur(6px)}
+@media (max-width:640px){
+  #panel{top:auto;bottom:12px;left:12px;right:12px;width:auto;padding:12px;max-height:55vh;overflow:auto}
+  #panel.min .body{display:none}
+  #toggle{display:block;position:absolute;top:10px;right:10px;flex:none;width:auto;padding:4px 10px}
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="load">Cargando la finca en 3D…</div>
+<div id="open">⤢ Ver en 3D a pantalla completa</div>
+<div id="panel">
+  <button id="toggle">–</button>
+  <h1>Biniorella · Parcelas A, B y C</h1>
+  <div class="sub">Camp de Mar · Andratx · Mallorca<br>Relieve IGN · Ortofoto PNOA 50 cm · Árboles y edificios en 3D</div>
+  <div class="body">
+  <table>
+    <thead><tr><th>Parcela</th><th>Sup. real</th><th>Cotas</th></tr></thead>
+    <tbody id="tb"></tbody>
+    <tfoot><tr><td>En venta (B + C)</td><td>401.265 m²</td><td></td></tr></tfoot>
+  </table>
+  <div class="sea">🌊 Playa de Camp de Mar a ~<span id="dist"></span> m de la parcela C</div>
+  <div class="row">
+    <button id="bParc" class="on">Parcelas</button>
+    <button id="bLab" class="on">Etiquetas</button>
+    <button id="bTree" class="on">Árboles</button>
+    <button id="bBld" class="on">Edificios</button>
+  </div>
+  <div class="row">
+    <button id="v3d">Vista 3D</button>
+    <button id="vTop">Cenital</button>
+    <button id="bRot">Girar</button>
+    <button id="bSh" class="on">Sombras</button>
+  </div>
+  <label class="sl">Relieve ×<span id="exV">1.3</span><input id="ex" type="range" min="1" max="2.5" step="0.1" value="1.3"></label>
+  <div class="foot">Arrastra para girar · rueda o pellizco para zoom · clic derecho / dos dedos para desplazar.<br>Árboles y edificios generados a partir de la ortofoto y OpenStreetMap: representación aproximada.<br>Datos: © Instituto Geográfico Nacional (PNOA, MDT) · © colaboradores de OpenStreetMap · Plano ESTOP C290118C-3.</div>
+  </div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/objects/Sky.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js"></script>
+<script>
+const ASSETS = window.__ASSETS || {};               // versión de un solo archivo: datos incrustados
+const asset = n => ASSETS[n] || ((window.__BASE || '') + n);   // versión web: datos en la CDN (jsDelivr ← GitHub)
+const Q = new URLSearchParams(location.search);
+const FOCUS = ['A','B','C'].includes((Q.get('p')||'').toUpperCase()) ? Q.get('p').toUpperCase() : null;
+const EMBED = Q.get('embed') === '1';
+const MOBILE = matchMedia('(max-width: 640px), (pointer: coarse)').matches;
+if (EMBED) document.documentElement.classList.add('embed');
+const INFO = {
+  A:{name:"PARCELA A", soc:"Biniorella 3", real:"219.454 m²", color:"#b05ad0", sold:true},
+  B:{name:"PARCELA B", soc:"Biniorella 1", real:"200.506 m²", color:"#ff8a1a"},
+  C:{name:"PARCELA C", soc:"Biniorella 2", real:"200.759 m²", color:"#c4f04a"}
+};
+const FONT = '-apple-system,Segoe UI,Roboto,sans-serif';
+const setLoad = t => document.getElementById('load').textContent = t;
+
+(async function main(){
+  const getJSON = async n => (await fetch(asset(n))).json();
+  const getBin = async n => (await fetch(asset(n))).arrayBuffer();
+  const loadTex = n => new Promise(res => new THREE.TextureLoader().load(asset(n), t => { t.encoding = THREE.sRGBEncoding; res(t); }));
+
+  const META = await getJSON('meta.json');
+  const [X0, X1, Y0, Y1] = META.hr, [CX0, CX1, CY0, CY1] = META.ctx;
+  const XC = (X0+X1)/2, YC = (Y0+Y1)/2;
+  const [HN, HM] = META.hrN, HS = META.hrStep, [CN, CM] = META.ctxN, CS = META.ctxStep;
+  setLoad('Cargando relieve…');
+  const zH = new Int16Array(await getBin('terrain5.bin'));
+  const zC = new Int16Array(await getBin('terrain_ctx.bin'));
+  let EX = 1.3;
+
+  // máscara de mar (5 m) a partir del relieve: solo hay agua donde el MDT marca cota 0
+  const MS = 5, MW = Math.round((META.ctx[1]-META.ctx[0])/MS), MH = Math.round((META.ctx[3]-META.ctx[2])/MS);
+  const seaMask = new Uint8Array(MW*MH);
+  {
+    const [cx0,,, cy1] = META.ctx, [hx0, hx1, hy0, hy1] = META.hr, [hn, hm] = META.hrN, hs = META.hrStep, [cn, cm] = META.ctxN, cs = META.ctxStep;
+    const bil = (z, n, m, st, ox, oy, E, N) => {
+      const c = (E-ox)/st, r = (oy-N)/st, i = Math.max(0, Math.min(n-2, Math.floor(c))), j = Math.max(0, Math.min(m-2, Math.floor(r))), fc = Math.min(1, Math.max(0, c-i)), fr = Math.min(1, Math.max(0, r-j));
+      return (z[j*n+i]*(1-fc) + z[j*n+i+1]*fc)*(1-fr) + (z[(j+1)*n+i]*(1-fc) + z[(j+1)*n+i+1]*fc)*fr;
+    };
+    for (let y=0; y<MH; y++){
+      const N = META.ctx[2] + (y+.5)*MS;
+      for (let x=0; x<MW; x++){
+        const E = cx0 + (x+.5)*MS;
+        const h = (E > hx0 && E < hx1 && N > hy0 && N < hy1) ? bil(zH, hn, hm, hs, hx0, hy1, E, N) : bil(zC, cn, cm, cs, cx0, cy1, E, N);
+        seaMask[y*MW+x] = h < 0.5 ? 255 : 0;   // décimas de metro
+      }
+    }
+  }
+  // fondo marino: bajamos 4 m las celdas de mar para que no se peleen con la superficie del agua (parpadeo)
+  for (const z of [zH, zC]) for (let n=0; n<z.length; n++) if (z[n] <= 0) z[n] = -40;
+
+  // alturas (m)
+  function hHR(E, N){
+    const c = (E - X0)/HS, r = (Y1 - N)/HS;
+    const i = Math.max(0, Math.min(HN-2, Math.floor(c))), j = Math.max(0, Math.min(HM-2, Math.floor(r)));
+    const fc = Math.min(1, Math.max(0, c-i)), fr = Math.min(1, Math.max(0, r-j)), g = (a,b) => zH[b*HN+a]/10;
+    return (g(i,j)*(1-fc)+g(i+1,j)*fc)*(1-fr) + (g(i,j+1)*(1-fc)+g(i+1,j+1)*fc)*fr;
+  }
+  const L = (E, N, h) => new THREE.Vector3(E - XC, h*EX, YC - N);   // UTM -> escena
+
+  // tabla
+  const tb = document.getElementById('tb');
+  for (const k of ['A','B','C']){
+    const hs = META.rings[k].map(p => hHR(p[0], p[1])), I = INFO[k];
+    tb.insertAdjacentHTML('beforeend', `<tr${I.sold?' class="sold"':''}><td><span class="dot" style="background:${I.color}"></span>${k} · ${I.soc}${I.sold?' <span class="pill">VENDIDO</span>':''}</td><td>${I.real}</td><td>${Math.round(Math.min(...hs))}–${Math.round(Math.max(...hs))} m</td></tr>`);
+  }
+  document.getElementById('dist').textContent = META.dist.toLocaleString('es-ES');
+
+  // ---------- render ----------
+  const canvas = document.getElementById('c');
+  const renderer = new THREE.WebGLRenderer({canvas, antialias:true, preserveDrawingBuffer:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio, MOBILE ? 1.5 : 2));
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.5;
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false;
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0xc4d4e3, 3500, 22000);
+  const camera = new THREE.PerspectiveCamera(42, 1, 6, 70000);
+  const controls = new THREE.OrbitControls(camera, canvas);
+  controls.enableDamping = true; controls.maxPolarAngle = Math.PI*0.48; controls.minDistance = 40; controls.maxDistance = 9000;
+
+  // cielo y sol (sol del SE, como en la ortofoto)
+  const sky = new THREE.Sky(); sky.scale.setScalar(400000); scene.add(sky);
+  const su = sky.material.uniforms;
+  su.turbidity.value = 5; su.rayleigh.value = 1.1; su.mieCoefficient.value = 0.004; su.mieDirectionalG.value = 0.82;
+  const sunDir = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90-52), THREE.MathUtils.degToRad(145));
+  su.sunPosition.value.copy(sunDir);
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const skyScene = new THREE.Scene(); const sky2 = new THREE.Sky(); sky2.scale.setScalar(1000);
+  Object.assign(sky2.material.uniforms, THREE.UniformsUtils.clone(su)); sky2.material.uniforms.sunPosition.value.copy(sunDir); skyScene.add(sky2);
+  scene.environment = pmrem.fromScene(skyScene).texture;
+  scene.add(new THREE.HemisphereLight(0xdfeaf5, 0x6b5a45, 0.2));
+  const sun = new THREE.DirectionalLight(0xfff1dc, 1.6);
+  sun.position.copy(sunDir).multiplyScalar(4000); scene.add(sun); scene.add(sun.target);
+  sun.castShadow = true; sun.shadow.mapSize.set(4096, 4096);
+  Object.assign(sun.shadow.camera, {left:-2300, right:2300, top:2300, bottom:-2300, near:100, far:9000});
+  sun.shadow.bias = -0.0004; sun.shadow.normalBias = 1.5;
+
+  // ---------- máscara de parcelas (sombreado en el terreno) ----------
+  const mk = document.createElement('canvas'); mk.width = 875; mk.height = 2000;
+  const mx = mk.getContext('2d'); mx.globalCompositeOperation = 'lighter';
+  const rgbOf = {A:'#ff0000', B:'#00ff00', C:'#0000ff'};
+  for (const k of ['A','B','C']){
+    mx.beginPath();
+    META.rings[k].forEach(([E,N],i) => { const u = (E-X0)/(X1-X0)*mk.width, v = (Y1-N)/(Y1-Y0)*mk.height; i ? mx.lineTo(u,v) : mx.moveTo(u,v); });
+    mx.closePath(); mx.fillStyle = rgbOf[k]; mx.fill();
+  }
+  const maskTex = new THREE.CanvasTexture(mk); maskTex.flipY = false;
+  const col = h => new THREE.Color(h).convertSRGBToLinear();
+  const U = {
+    uMask:{value:maskTex}, uParc:{value:1}, uMO:{value:new THREE.Vector2(X0-XC, YC-Y1)}, uMS:{value:new THREE.Vector2(X1-X0, Y1-Y0)},
+    uW:{value:new THREE.Vector3(FOCUS?(FOCUS==='A'?.42:.16):.30, FOCUS?(FOCUS==='B'?.42:.16):.28, FOCUS?(FOCUS==='C'?.36:.14):.2)},
+    cA:{value:col(INFO.A.color)}, cB:{value:col(INFO.B.color)}, cC:{value:col(INFO.C.color)}
+  };
+  function terrainMat(map, withMask){
+    const m = new THREE.MeshStandardMaterial({map, roughness:1, metalness:0, envMapIntensity:0.22});
+    if (withMask) m.onBeforeCompile = sh => {
+      Object.assign(sh.uniforms, U);
+      sh.vertexShader = 'uniform vec2 uMO; uniform vec2 uMS; varying vec2 vMUv;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vMUv = vec2((position.x-uMO.x)/uMS.x, (position.z-uMO.y)/uMS.y); vTP = position;');
+      sh.vertexShader = 'varying vec3 vTP;\n' + sh.vertexShader;
+      sh.fragmentShader = 'uniform sampler2D uMask; uniform float uParc; uniform vec3 uW; uniform vec3 cA; uniform vec3 cB; uniform vec3 cC; varying vec2 vMUv; varying vec3 vTP; uniform sampler2D uCtx; uniform vec4 uCtxB;\n' +
+        sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+          // fondo marino: usar la misma ortofoto que el entorno para que el mar tenga un único tono
+          vec2 cuv = vec2((vTP.x + uCtxB.x)/uCtxB.y, (uCtxB.z - vTP.z)/uCtxB.w);
+          diffuseColor.rgb = mix(diffuseColor.rgb, mapTexelToLinear(texture2D(uCtx, cuv)).rgb, smoothstep(-0.5, -3.0, vTP.y));
+          vec3 mk = texture2D(uMask, vMUv).rgb * uParc;
+          diffuseColor.rgb = mix(diffuseColor.rgb, cA, mk.r*uW.x);
+          diffuseColor.rgb = mix(diffuseColor.rgb, cB, mk.g*uW.y);
+          diffuseColor.rgb = mix(diffuseColor.rgb, cC, mk.b*uW.z);`);
+    };
+    return m;
+  }
+
+  // ---------- terreno ----------
+  setLoad('Cargando ortofoto…');
+  const ctxTex = await loadTex('ctx_orto.jpg'); ctxTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  U.uCtx = {value: ctxTex}; U.uCtxB = {value: new THREE.Vector4(XC - CX0, CX1 - CX0, YC - CY0, CY1 - CY0)};
+  const hrTex = await Promise.all(META.tiles.map(([r,c]) => loadTex(`tex/hr_${r}_${c}.jpg`)));
+  hrTex.forEach(t => t.anisotropy = renderer.capabilities.getMaxAnisotropy());
+  const terrain = new THREE.Group(); scene.add(terrain);
+  function gridMesh(z, N, M, step, ox, oy, i0, j0, ni, nj, tex, skip, withMask){
+    // ox,oy: UTM esquina NO de la malla completa
+    const pos = [], nor = [], uv = [], idx = [];
+    const H = (i,j) => z[Math.min(M-1,Math.max(0,j))*N + Math.min(N-1,Math.max(0,i))]/10;
+    for (let j=0;j<=nj;j++) for (let i=0;i<=ni;i++){
+      const gi=i0+i, gj=j0+j, E=ox+gi*step, Nn=oy-gj*step, p=L(E,Nn,H(gi,gj));
+      pos.push(p.x,p.y,p.z);
+      const dx=(H(gi+1,gj)-H(gi-1,gj))*EX, dz=(H(gi,gj+1)-H(gi,gj-1))*EX, n=new THREE.Vector3(-dx, 2*step, dz).normalize();
+      nor.push(n.x,n.y,n.z); uv.push(i/ni, 1-j/nj);
+    }
+    for (let j=0;j<nj;j++) for (let i=0;i<ni;i++){
+      if (skip && skip(ox+(i0+i+.5)*step, oy-(j0+j+.5)*step)) continue;
+      const a=j*(ni+1)+i, b=a+1, c=a+ni+1, d=c+1; idx.push(a,c,b, b,c,d);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor,3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv,2)); g.setIndex(idx);
+    const m = new THREE.Mesh(g, terrainMat(tex, withMask)); m.receiveShadow = true; return m;
+  }
+  function buildTerrain(){
+    terrain.children.slice().forEach(m => { terrain.remove(m); m.geometry.dispose(); m.material.dispose(); });
+    META.tiles.forEach(([r,c,w], k) => {
+      const ni = w/10, nj = 100;
+      terrain.add(gridMesh(zH, HN, HM, HS, X0, Y1, c*100, r*100, ni, nj, hrTex[k], null, true));
+    });
+    const inside = (E,N) => E > X0+20 && E < X1-20 && N > Y0+20 && N < Y1-20;
+    const cm = gridMesh(zC, CN, CM, CS, CX0, CY1, 0, 0, CN-1, CM-1, ctxTex, inside, false);
+    cm.material.polygonOffset = true; cm.material.polygonOffsetFactor = 1; cm.material.polygonOffsetUnits = 4;
+    terrain.add(cm);
+    // cortes laterales macizos (marrón tierra), como la maqueta original
+    const base = -60, sp = [], sc = [], si = [], cTop = new THREE.Color('#6e5843').convertSRGBToLinear(), cBot = new THREE.Color('#3a2e22').convertSRGBToLinear();
+    const Hc = (i,j) => zC[j*CN + i]/10;
+    const edge = [];
+    for (let i=0;i<CN;i++) edge.push([i,0]);
+    for (let j=1;j<CM;j++) edge.push([CN-1,j]);
+    for (let i=CN-2;i>=0;i--) edge.push([i,CM-1]);
+    for (let j=CM-2;j>=0;j--) edge.push([0,j]);
+    edge.forEach(([i,j]) => {
+      const p = L(CX0+i*CS, CY1-j*CS, Hc(i,j));
+      sp.push(p.x, p.y, p.z, p.x, base, p.z);
+      sc.push(cTop.r, cTop.g, cTop.b, cBot.r, cBot.g, cBot.b);
+    });
+    const wet = ([i,j]) => zC[j*CN+i] <= -40;   // tramos en el mar: sin pared (queda bajo el agua)
+    for (let n=0;n<edge.length;n++){ const m = (n+1)%edge.length; if (wet(edge[n]) && wet(edge[m])) continue; const a = n*2, b = m*2; si.push(a, a+1, b, b, a+1, b+1); }
+    const sg = new THREE.BufferGeometry();
+    sg.setAttribute('position', new THREE.Float32BufferAttribute(sp,3)); sg.setAttribute('color', new THREE.Float32BufferAttribute(sc,3));
+    sg.setIndex(si); sg.computeVertexNormals();
+    const skirt = new THREE.Mesh(sg, new THREE.MeshStandardMaterial({vertexColors:true, roughness:1, side:THREE.DoubleSide, envMapIntensity:0.3}));
+    terrain.add(skirt);
+  }
+
+  // ---------- mar ----------
+  function waterNormals(){
+    const s = 256, c = document.createElement('canvas'); c.width = c.height = s;
+    const x = c.getContext('2d'), im = x.createImageData(s,s), h = new Float32Array(s*s);
+    const waves = Array.from({length:14}, (_,i) => ({kx:Math.round((Math.random()*2-1)*(3+i)), ky:Math.round((Math.random()*2-1)*(3+i)), a:1/(1+i*0.6), p:Math.random()*6.28}));
+    for (let j=0;j<s;j++) for (let i=0;i<s;i++){ let v=0; for (const w of waves) v += w.a*Math.sin((w.kx*i + w.ky*j)/s*6.2832 + w.p); h[j*s+i]=v; }
+    for (let j=0;j<s;j++) for (let i=0;i<s;i++){
+      const dx = h[j*s+(i+1)%s]-h[j*s+(i-1+s)%s], dy = h[((j+1)%s)*s+i]-h[((j-1+s)%s)*s+i];
+      const n = new THREE.Vector3(-dx*2, -dy*2, 1).normalize(), o = (j*s+i)*4;
+      im.data[o]=(n.x*.5+.5)*255; im.data[o+1]=(n.y*.5+.5)*255; im.data[o+2]=(n.z*.5+.5)*255; im.data[o+3]=255;
+    }
+    x.putImageData(im,0,0); const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+  }
+  const wn = waterNormals(); wn.repeat.set(900, 900);
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(90000, 90000).rotateX(-Math.PI/2),
+    new THREE.MeshStandardMaterial({color:0x0d3550, transparent:true, opacity:0.42, roughness:0.06, metalness:0.0, normalMap:wn, normalScale:new THREE.Vector2(0.25,0.25), envMapIntensity:1.2, depthWrite:false}));
+  {
+    const mt = new THREE.DataTexture(seaMask, MW, MH, THREE.LuminanceFormat, THREE.UnsignedByteType);
+    mt.magFilter = mt.minFilter = THREE.LinearFilter; mt.needsUpdate = true;
+    const wu = {uSea:{value:mt}, uSeaB:{value:new THREE.Vector4(XC - META.ctx[0], META.ctx[1]-META.ctx[0], YC - META.ctx[2], META.ctx[3]-META.ctx[2])}};
+    water.material.onBeforeCompile = sh => {
+      Object.assign(sh.uniforms, wu);
+      sh.vertexShader = 'varying vec3 vWP;\n' + sh.vertexShader.replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n vWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = 'varying vec3 vWP; uniform sampler2D uSea; uniform vec4 uSeaB;\n' + sh.fragmentShader.replace('#include <alphamap_fragment>', `#include <alphamap_fragment>
+        vec2 suv = vec2((vWP.x + uSeaB.x)/uSeaB.y, (uSeaB.z - vWP.z)/uSeaB.w);
+        float sea = (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) ? 1.0 : texture2D(uSea, suv).r;
+        diffuseColor.a *= smoothstep(0.35, 0.65, sea);`);
+    };
+  }
+  water.renderOrder = 2; scene.add(water);
+  // mar abierto: mismo color e iluminación que el fondo marino de la ortofoto, para que no se vea la costura del entorno
+  const dg = (() => { const R = 45000, x0 = CX0-XC, x1 = CX1-XC, z0 = YC-CY1, z1 = YC-CY0, q = [];   // marco alrededor del entorno (sin solaparse con él)
+    const rect = (a,b,c,d) => q.push(new THREE.PlaneGeometry(b-a, d-c).rotateX(-Math.PI/2).translate((a+b)/2, 0, (c+d)/2));
+    rect(-R, R, -R, z0); rect(-R, R, z1, R); rect(-R, x0, z0, z1); rect(x1, R, z0, z1);
+    return THREE.BufferGeometryUtils.mergeBufferGeometries(q); })();
+  const deep = new THREE.Mesh(dg, new THREE.MeshStandardMaterial({color:'#283c52', roughness:1, metalness:0, envMapIntensity:0.22}));
+  deep.position.y = -4.2*EX; scene.add(deep);
+
+  // ---------- árboles ----------
+  setLoad('Plantando 170.000 árboles…');
+  const TB = new DataView(await getBin('trees.bin')), NT = TB.byteLength/8;
+  function crownGeo(){
+    const parts = [[0,0,0,1],[0.5,-0.15,0.25,0.75],[-0.45,-0.1,-0.3,0.72]].map(([x,y,z,s]) => {
+      const g = new THREE.IcosahedronGeometry(1, 0); g.scale(s, s*0.82, s); g.translate(x*0.6, y*0.6, z*0.6); return g; });
+    let g = THREE.BufferGeometryUtils.mergeBufferGeometries(parts.map(q => { q.deleteAttribute('uv'); q.deleteAttribute('normal'); return q; }));
+    g = THREE.BufferGeometryUtils.mergeVertices(g, 1e-4);
+    const p = g.attributes.position;
+    for (let i=0;i<p.count;i++){ const f = 0.88 + 0.24*Math.abs(Math.sin(p.getX(i)*7.1+p.getY(i)*5.3+p.getZ(i)*3.7)); p.setXYZ(i, p.getX(i)*f, p.getY(i)*f, p.getZ(i)*f); }
+    g.computeVertexNormals(); return g;
+  }
+  const crownG = crownGeo(), trunkG = new THREE.CylinderGeometry(0.12, 0.2, 1, 5, 1, true).translate(0, 0.5, 0);
+  const crownM = new THREE.MeshStandardMaterial({roughness:0.92, metalness:0, envMapIntensity:0.6});
+  const trunkM = new THREE.MeshStandardMaterial({color:0x5a4634, roughness:1});
+  const treeSel = []; for (let k=0;k<NT;k++){ const r = TB.getUint8(k*8+4)/10; if (!(EMBED||MOBILE) || r >= 1.2) treeSel.push(k); }
+  const crowns = new THREE.InstancedMesh(crownG, crownM, treeSel.length), trunks = new THREE.InstancedMesh(trunkG, trunkM, treeSel.length);
+  crowns.castShadow = true; crowns.receiveShadow = true; trunks.castShadow = false;
+  const rnd = s => { const x = Math.sin(s*12.9898)*43758.5453; return x - Math.floor(x); };
+  const tc = new THREE.Color();
+  treeSel.forEach((k, n) => {
+    const R = TB.getUint8(k*8+5), G = TB.getUint8(k*8+6), B = TB.getUint8(k*8+7);
+    tc.setRGB(R/255, G/255, B/255); const hsl = {}; tc.getHSL(hsl);
+    tc.setHSL(0.20 + (hsl.h - 0.2)*0.4 + (rnd(k+7)-0.5)*0.03, Math.min(0.5, hsl.s*1.45 + 0.1), Math.min(0.37, hsl.l*1.25 + 0.03)).convertSRGBToLinear();
+    crowns.setColorAt(n, tc);
+  });
+  scene.add(crowns, trunks);
+  // árboles del entorno (generados a partir de la ortofoto de 4 m: zonas verdes, menos precisos que los de la zona detallada)
+  const TC = new DataView(await getBin('trees_ctx.bin')), NTC = TC.byteLength/8;
+  const ctxSel = []; for (let k=0;k<NTC;k++) if (!(EMBED||MOBILE) || k % 2 === 0) ctxSel.push(k);
+  const ctxG = THREE.BufferGeometryUtils.mergeVertices((() => { const g = new THREE.IcosahedronGeometry(1, 0); g.deleteAttribute('uv'); g.deleteAttribute('normal'); return g; })(), 1e-4);
+  ctxG.computeVertexNormals();
+  const crownsC = new THREE.InstancedMesh(ctxG, crownM, ctxSel.length); crownsC.receiveShadow = true;
+  ctxSel.forEach((k, n) => {
+    tc.setRGB(TC.getUint8(k*8+5)/255, TC.getUint8(k*8+6)/255, TC.getUint8(k*8+7)/255); const hsl = {}; tc.getHSL(hsl);
+    tc.setHSL(0.21 + (hsl.h - 0.2)*0.3 + (rnd(k+11)-0.5)*0.04, Math.min(0.45, hsl.s*1.3 + 0.12), Math.min(0.33, hsl.l*1.05 + 0.02)).convertSRGBToLinear();
+    crownsC.setColorAt(n, tc);
+  });
+  scene.add(crownsC);
+  const hC = (E, N) => { const c = Math.max(0, Math.min(CN-1.001, (E-CX0)/CS)), r = Math.max(0, Math.min(CM-1.001, (CY1-N)/CS)), i = Math.floor(c), j = Math.floor(r), fc = c-i, fr = r-j, g = (a,b) => zC[b*CN+a]/10;
+    return (fc + fr < 1) ? g(i,j) + (g(i+1,j)-g(i,j))*fc + (g(i,j+1)-g(i,j))*fr : g(i+1,j+1) + (g(i,j+1)-g(i+1,j+1))*(1-fc) + (g(i+1,j)-g(i+1,j+1))*(1-fr); };
+  const tm = new THREE.Matrix4(), tq = new THREE.Quaternion(), tv = new THREE.Vector3(), ts = new THREE.Vector3(), up = new THREE.Vector3(0,1,0);
+  function placeTrees(){
+    treeSel.forEach((k, n) => {
+      const E = X0 + TB.getUint16(k*8,true)*0.5, N = Y1 - TB.getUint16(k*8+2,true)*0.5;
+      const r0 = TB.getUint8(k*8+4)/10, rr = Math.min(7, Math.max(1.1, r0*1.75)), q = rnd(k+1);
+      const shrub = r0 < 1.15, H = shrub ? 1.2 + rr*0.9 : Math.min(15, Math.max(3.5, rr*2.3 + q*2));
+      const g = hHR(E, N)*EX, p = L(E, N, 0); p.y = g;
+      tq.setFromAxisAngle(up, q*6.283);
+      tv.set(p.x, g + H - rr*0.75, p.z); ts.set(rr, rr*(shrub?0.7:0.85), rr);
+      crowns.setMatrixAt(n, tm.compose(tv, tq, ts));
+      tv.set(p.x, g - 0.3, p.z); ts.set(0.7+rr*0.15, shrub ? 0.01 : H - rr*1.1, 0.7+rr*0.15);
+      trunks.setMatrixAt(n, tm.compose(tv, tq, ts));
+    });
+    crowns.instanceMatrix.needsUpdate = trunks.instanceMatrix.needsUpdate = true;
+    ctxSel.forEach((k, n) => {
+      const E = CX0 + TC.getUint16(k*8,true)*0.2, N = CY1 - TC.getUint16(k*8+2,true)*0.2, rr = TC.getUint8(k*8+4)/10, q = rnd(k+3);
+      const g = hC(E, N)*EX, p = L(E, N, 0);
+      tq.setFromAxisAngle(up, q*6.283); tv.set(p.x, g + rr*0.75, p.z); ts.set(rr, rr*(0.85 + q*0.35), rr);
+      crownsC.setMatrixAt(n, tm.compose(tv, tq, ts));
+    });
+    crownsC.instanceMatrix.needsUpdate = true;
+  }
+
+  // ---------- edificios ----------
+  setLoad('Levantando edificios…');
+  const BLD = await getJSON('buildings.json');
+  let buildings = null;
+  const walls = ['#d9cfbd','#cfc2a8','#e2dccf','#c4b192','#d6cab4'].map(col);
+  function buildBuildings(){
+    if (buildings){ scene.remove(buildings); buildings.geometry.dispose(); }
+    const geos = [];
+    BLD.forEach((b, n) => {
+      const shape = new THREE.Shape(b.p.map(([dx, dy]) => new THREE.Vector2(X0+dx-XC, -(YC-(Y1-dy)))));
+      const g = new THREE.ExtrudeGeometry(shape, {depth:b.h + 1.5, bevelEnabled:false}); g.rotateX(-Math.PI/2); g.translate(0, b.b*EX, 0);
+      const gg = g.toNonIndexed ? (g.index ? g.toNonIndexed() : g) : g;
+      const nrm = gg.attributes.normal, cnt = gg.attributes.position.count, c = new Float32Array(cnt*3);
+      const roof = new THREE.Color(b.c[0]/255, b.c[1]/255, b.c[2]/255).convertSRGBToLinear(), wall = walls[n % walls.length];
+      for (let i=0;i<cnt;i++){ const cc = nrm.getY(i) > 0.5 ? roof : wall; c[i*3]=cc.r; c[i*3+1]=cc.g; c[i*3+2]=cc.b; }
+      gg.setAttribute('color', new THREE.BufferAttribute(c,3)); gg.deleteAttribute('uv'); geos.push(gg);
+    });
+    buildings = new THREE.Mesh(THREE.BufferGeometryUtils.mergeBufferGeometries(geos), new THREE.MeshStandardMaterial({vertexColors:true, roughness:0.85, envMapIntensity:0.6}));
+    buildings.castShadow = buildings.receiveShadow = true; buildings.visible = showBld; scene.add(buildings);
+  }
+
+  // ---------- linderos y etiquetas ----------
+  let lines = [], labels = [], showParc = true, showLab = true, showTree = true, showBld = true;
+  function roundRect(x,a,b,w,h,r){x.beginPath();x.moveTo(a+r,b);x.arcTo(a+w,b,a+w,b+h,r);x.arcTo(a+w,b+h,a,b+h,r);x.arcTo(a,b+h,a,b,r);x.arcTo(a,b,a+w,b,r);x.closePath();}
+  function makeLabel(I){
+    const c = document.createElement('canvas'); c.width = 560; c.height = I.sold ? 300 : 220;
+    const x = c.getContext('2d');
+    x.fillStyle = 'rgba(14,17,22,.86)'; roundRect(x,4,4,552,212,26); x.fill();
+    if (I.sold){ x.strokeStyle = '#d62f2f'; x.lineWidth = 6; roundRect(x,4,4,552,212,26); x.stroke(); }
+    x.fillStyle = I.color; x.fillRect(30,40,14,140);
+    x.fillStyle = '#fff'; x.font = `bold 56px ${FONT}`; x.fillText(I.name, 66, 82);
+    x.fillStyle = '#9fd8ff'; x.font = `600 46px ${FONT}`; x.fillText(I.soc, 66, 136);
+    x.fillStyle = '#cfd6df'; x.font = `40px ${FONT}`; x.fillText(I.real, 66, 186);
+    if (I.sold){ x.fillStyle = '#d62f2f'; roundRect(x,110,226,340,68,14); x.fill(); x.fillStyle = '#fff'; x.font = `bold 50px ${FONT}`; x.textAlign = 'center'; x.fillText('VENDIDO', 280, 278); }
+    const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({map:t, depthTest:false, toneMapped:false, fog:false}));
+    s.scale.set(392, c.height*0.7, 1); s.renderOrder = 10; return s;
+  }
+  function makePlace(tx, big){
+    const c = document.createElement('canvas'); c.width = 640; c.height = 120; const x = c.getContext('2d');
+    x.textAlign = 'center'; x.font = `${big ? 'italic 600 64px' : 'bold 56px'} ${FONT}`;
+    x.lineWidth = 10; x.lineJoin = 'round'; x.strokeStyle = 'rgba(0,30,60,.75)'; x.strokeText(tx, 320, 80); x.fillStyle = big ? '#dff2ff' : '#fff'; x.fillText(tx, 320, 80);
+    const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({map:t, depthTest:false, toneMapped:false, fog:false}));
+    s.scale.set(big ? 560 : 400, big ? 105 : 75, 1); s.renderOrder = 9; return s;
+  }
+  const POIC = {beach:['#19a7b8','≈'], view:['#8a5cd6','◉'], golf:['#2f9e4f','⛳'], hist:['#9a6b45','♜'], light:['#8a5cd6','✦']};
+  function makePOI(tx, kind){
+    const c = document.createElement('canvas'); c.width = 640; c.height = 96; const x = c.getContext('2d');
+    x.font = `600 44px ${FONT}`; const w = Math.min(540, x.measureText(tx).width), x0 = (640 - (w + 70))/2;
+    const [col, g] = POIC[kind];
+    x.beginPath(); x.arc(x0+28, 48, 26, 0, 6.2832); x.fillStyle = col; x.fill(); x.lineWidth = 4; x.strokeStyle = '#fff'; x.stroke();
+    x.fillStyle = '#fff'; x.font = `bold 30px ${FONT}`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(g, x0+28, 50);
+    x.textAlign = 'left'; x.font = `600 44px ${FONT}`; x.lineWidth = 9; x.lineJoin = 'round'; x.strokeStyle = 'rgba(0,30,60,.75)';
+    x.strokeText(tx, x0+66, 50, 540); x.fillStyle = '#fff'; x.fillText(tx, x0+66, 50, 540);
+    const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({map:t, depthTest:false, toneMapped:false, fog:false}));
+    s.center.set(0.5, 0.2); s.scale.set(420, 63, 1); s.renderOrder = 8; return s;
+  }
+  function makeShield(ref){
+    const c = document.createElement('canvas'); c.width = 200; c.height = 80; const x = c.getContext('2d');
+    const [bg, fg] = ref === 'Ma-1' ? ['#d6453a', '#fff'] : (ref === 'Ma-1A' || ref === 'Ma-10') ? ['#f0a030', '#2a1d05'] : ['#f6d64a', '#2a2205'];
+    x.font = `bold 44px ${FONT}`; const w = x.measureText(ref).width + 34;
+    roundRect(x, (200-w)/2, 8, w, 64, 12); x.fillStyle = bg; x.fill(); x.lineWidth = 4; x.strokeStyle = 'rgba(255,255,255,.9)'; x.stroke();
+    x.fillStyle = fg; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(ref, 100, 42);
+    const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({map:t, depthTest:false, toneMapped:false, fog:false}));
+    s.center.set(0.5, 0.1); s.scale.set(150, 60, 1); s.renderOrder = 7; return s;
+  }
+  const cent = r => { let A=0,cx=0,cy=0; for(let n=0;n<r.length;n++){const [x1,y1]=r[n],[x2,y2]=r[(n+1)%r.length],f=x1*y2-x2*y1;A+=f;cx+=(x1+x2)*f;cy+=(y1+y2)*f;} return [cx/(3*A), cy/(3*A)]; };
+  // punto bien dentro de la parcela (el más alejado de los linderos), para clavar el poste
+  function inner(r, avoid=[]){
+    const xs = r.map(p=>p[0]), ys = r.map(p=>p[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const ins = (x,y) => { let c = false; for (let i=0,j=r.length-1;i<r.length;j=i++){ const [xi,yi]=r[i],[xj,yj]=r[j]; if ((yi>y)!==(yj>y) && x < (xj-xi)*(y-yi)/(yj-yi)+xi) c = !c; } return c; };
+    const dseg = (x,y) => { let m = 1e9; for (let i=0;i<r.length;i++){ const [ax,ay]=r[i],[bx,by]=r[(i+1)%r.length], dx=bx-ax, dy=by-ay, t=Math.max(0,Math.min(1,((x-ax)*dx+(y-ay)*dy)/(dx*dx+dy*dy||1))); m = Math.min(m, Math.hypot(x-ax-t*dx, y-ay-t*dy)); } return m; };
+    const cand = [];
+    for (let i=0;i<=60;i++) for (let j=0;j<=60;j++){ const x = x0+(x1-x0)*i/60, y = y0+(y1-y0)*j/60; if (ins(x,y)) cand.push([x, y, dseg(x,y)]); }
+    const md = Math.max(...cand.map(c=>c[2]));
+    let best = cent(r), bs = -1;
+    for (const [x,y,d] of cand){
+      if (d < 0.55*md) continue;   // siempre bien dentro (lejos del lindero)
+      const sc = avoid.length ? Math.min(...avoid.map(([ax,ay]) => Math.hypot(x-ax, y-ay))) : d;   // y lejos de los postes vecinos
+      if (sc > bs){ bs = sc; best = [x,y]; }
+    }
+    return best;
+  }
+  function buildLines(){
+    lines.forEach(l => { scene.remove(l); l.geometry.dispose(); }); lines = [];
+    labels.forEach(l => { scene.remove(l); l.traverse && l.traverse(o => o.geometry && o.geometry.dispose()); }); labels = [];
+    const PIN = {}; PIN.B = [450064, 4377818];   // B: junto a la casa (lado oeste de la vivienda)
+    PIN.C = [450162, 4377365];   // C: junto a su casa (lado oeste)
+    PIN.A = inner(META.rings.A);
+    for (const k of ['A','B','C']){
+      const r = META.rings[k], pts = [];
+      for (let n=0;n<r.length;n++){
+        const [x1,y1] = r[n], [x2,y2] = r[(n+1)%r.length], s = Math.max(1, Math.ceil(Math.hypot(x2-x1,y2-y1)/3));
+        for (let t=0;t<s;t++){ const x = x1+(x2-x1)*t/s, y = y1+(y2-y1)*t/s; pts.push(L(x, y, hHR(x,y)).add(new THREE.Vector3(0,2.5,0))); }
+      }
+      pts.push(pts[0].clone());
+      const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({color:INFO[k].color, toneMapped:false, fog:false}));
+      l.visible = showParc; scene.add(l); lines.push(l);
+      const [cx, cy] = PIN[k], s = makeLabel(INFO[k]), base = L(cx, cy, hHR(cx,cy)), H = {A:300,B:240,C:45}[k];
+      s.center.set(0.5, 0); s.position.copy(base).add(new THREE.Vector3(0, H, 0));
+      s.visible = showLab; scene.add(s); labels.push(s);
+      const pc = new THREE.Color(INFO[k].color).convertSRGBToLinear();
+      const pole = new THREE.Group();
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.2, H, 10).translate(0, H/2, 0), new THREE.MeshStandardMaterial({color:pc, emissive:pc, emissiveIntensity:0.35, roughness:0.5}));
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(9, 22, 14).rotateX(Math.PI).translate(0, 4, 0), new THREE.MeshStandardMaterial({color:pc, emissive:pc, emissiveIntensity:0.35, roughness:0.5}));
+      const ring = new THREE.Mesh(new THREE.RingGeometry(14, 22, 40).rotateX(-Math.PI/2).translate(0, 1.5, 0), new THREE.MeshBasicMaterial({color:INFO[k].color, toneMapped:false, transparent:true, opacity:0.9, side:THREE.DoubleSide, depthWrite:false}));
+      shaft.castShadow = true; pole.add(shaft, tip, ring); pole.position.copy(base); pole.visible = showLab; scene.add(pole); labels.push(pole);
+    }
+    for (const [tx, pt, big] of [['Camp de Mar', META.beach, false], ['Mar Mediterráneo', META.sea, true]]){
+      const s = makePlace(tx, big); s.position.copy(L(pt[0], pt[1], 0)).add(new THREE.Vector3(0, big ? 30 : 80, 0));
+      s.visible = showLab; scene.add(s); labels.push(s);
+    }
+    // localidades del entorno (posición comprobada sobre la ortofoto)
+    const hCtx = (E, N) => { const c = Math.max(0, Math.min(CN-1.001, (E-CX0)/CS)), r = Math.max(0, Math.min(CM-1.001, (CY1-N)/CS)), i = Math.floor(c), j = Math.floor(r), fc = c-i, fr = r-j, g = (a,b) => Math.max(0, zC[b*CN+a]/10);
+      return (g(i,j)*(1-fc) + g(i+1,j)*fc)*(1-fr) + (g(i,j+1)*(1-fc) + g(i+1,j+1)*fc)*fr; };
+    for (const [tx, E, N, big] of [['Andratx', 450212, 4380782, true], ["Port d'Andratx", 447258, 4377194, true], ['Peguera', 452592, 4376760, true],
+                                   ["S'Arracó", 447553, 4381332, false], ['Cala Fornells', 451841, 4376265, false], ['Costa de la Calma', 453850, 4375511, false], ['Cala Llamp', 448103, 4376290, false]]){
+      const s = makePlace(tx, false); s.center.set(0.5, 0.15);
+      s.scale.multiplyScalar(big ? 1.7 : 1.25);
+      s.position.copy(L(E, N, hCtx(E, N))).add(new THREE.Vector3(0, 25, 0));
+      s.visible = showLab; scene.add(s); labels.push(s);
+    }
+    // puntos de interés y carreteras (OpenStreetMap)
+    const hAny = (E, N) => (E > X0+5 && E < X1-5 && N > Y0+5 && N < Y1-5) ? Math.max(0, hHR(E, N)) : hCtx(E, N);
+    const POI = [["Platja de Palmira", "beach", 452869, 4376461], ["Caló d'en Monjo", "beach", 451032, 4375610], ["Platja de Torà", "beach", 453257, 4376283], ["Castell de Son Mas", "hist", 450541, 4380886], ["Mirador de la Mola", "view", 445785, 4375994], ["Cap Andritxol", "view", 450341, 4375173], ["Faro de Port d'Andratx", "light", 447052, 4377502], ["Cala Blanca", "beach", 448929, 4376527], ["Golf de Andratx", "golf", 450330, 4377060]];
+    const ROADS = [["Ma-1", 447793, 4377497], ["Ma-1", 449801, 4379764], ["Ma-1", 452488, 4378076], ["Ma-1030", 446046, 4381290], ["Ma-1030", 448604, 4380617], ["Ma-1012", 453248, 4376921], ["Ma-1012", 453658, 4379495], ["Ma-10", 449782, 4381568], ["Ma-1022", 447287, 4378162], ["Ma-1A", 450868, 4376944], ["Ma-1050", 447619, 4380740], ["Ma-1020", 448118, 4377061], ["Ma-1031", 451064, 4381205], ["Ma-1031", 453863, 4381591]];
+    for (const [tx, kind, E, N] of POI){
+      const s = makePOI(tx, kind); s.position.copy(L(E, N, hAny(E, N))).add(new THREE.Vector3(0, 12, 0));
+      s.visible = showLab; scene.add(s); labels.push(s);
+    }
+    for (const [ref, E, N] of ROADS){
+      const s = makeShield(ref); s.position.copy(L(E, N, hAny(E, N))).add(new THREE.Vector3(0, 10, 0));
+      s.visible = showLab; scene.add(s); labels.push(s);
+    }
+  }
+
+  function rebuild(){ buildTerrain(); placeTrees(); buildBuildings(); buildLines(); water.position.y = 0.5*EX; deep.position.y = -4.2*EX; renderer.shadowMap.needsUpdate = true; }
+  rebuild();
+
+  // ---------- vistas ----------
+  function center(){
+    const all = FOCUS ? META.rings[FOCUS] : Object.values(META.rings).flat();
+    const x = all.reduce((s,p)=>s+p[0],0)/all.length, y = all.reduce((s,p)=>s+p[1],0)/all.length;
+    return L(x, y, hHR(x, y));
+  }
+  function view3d(){
+    const c = center();
+    if (FOCUS){ c.z += 250; c.x -= 120; controls.target.copy(c); camera.position.set(c.x-250, c.y+650, c.z+1350); }
+    else { c.z += 700; c.x -= 150; controls.target.copy(c); camera.position.set(c.x+900, c.y+850, c.z+2300); }
+    const k = camera.aspect < 1 ? Math.min(2.2, 1.1/camera.aspect) : 1;
+    camera.position.sub(controls.target).multiplyScalar(k).add(controls.target); controls.update();
+  }
+  function viewTop(){ const c = center(); controls.target.copy(c); camera.position.set(c.x, c.y+2900, c.z+1); controls.update(); }
+
+  // ---------- interfaz ----------
+  const tgl = (id, fn) => { const b = document.getElementById(id); b.onclick = () => { b.classList.toggle('on'); fn(b.classList.contains('on')); }; };
+  tgl('bParc', v => { showParc = v; U.uParc.value = v ? 1 : 0; lines.forEach(l => l.visible = v); });
+  tgl('bLab', v => { showLab = v; labels.forEach(l => l.visible = v); });
+  tgl('bTree', v => { showTree = v; crowns.visible = trunks.visible = crownsC.visible = v; });
+  tgl('bBld', v => { showBld = v; if (buildings) buildings.visible = v; });
+  tgl('bSh', v => { sun.castShadow = v; renderer.shadowMap.needsUpdate = true; });
+  tgl('bRot', v => { controls.autoRotate = v; controls.autoRotateSpeed = 0.6; });
+  if (EMBED || MOBILE){ const b = document.getElementById('bSh'); b.classList.remove('on'); sun.castShadow = false; }
+  document.getElementById('v3d').onclick = view3d;
+  document.getElementById('vTop').onclick = viewTop;
+  const ex = document.getElementById('ex');
+  ex.onchange = () => { EX = +ex.value; rebuild(); };
+  ex.oninput = () => { document.getElementById('exV').textContent = (+ex.value).toFixed(1); };
+  const panel = document.getElementById('panel');
+  if (innerWidth <= 640){ panel.classList.add('min'); document.getElementById('toggle').textContent = '+'; }
+  document.getElementById('toggle').onclick = e => { panel.classList.toggle('min'); e.target.textContent = panel.classList.contains('min') ? '+' : '–'; };
+
+  function resize(){ const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w/h; camera.updateProjectionMatrix(); }
+  addEventListener('resize', resize);
+  resize(); view3d();
+  document.getElementById('load').classList.add('done');
+  window.__ready = true;
+  // vista programable: lookAt(E,N,altSobreSuelo, desdeE, desdeN, altAbs)
+  window.__view = (tE, tN, fE, fN, fAlt) => { controls.target.copy(L(tE, tN, hHR(tE, tN))); camera.position.copy(L(fE, fN, fAlt)); controls.update(); renderer.render(scene, camera); };
+  window.__shot = async name => { renderer.render(scene, camera); const b = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.9)); await fetch(`/frame?set=h&i=${name}`, {method:'POST', body:b}); };
+
+  const clock = new THREE.Clock();
+  if (EMBED){
+    controls.enabled = false;
+    const off0 = camera.position.clone().sub(controls.target), t0 = performance.now(); let down = null;
+    canvas.addEventListener('pointerdown', e => { down = [e.clientX, e.clientY]; });
+    canvas.addEventListener('pointerup', e => {
+      if (down && Math.hypot(e.clientX-down[0], e.clientY-down[1]) < 8){ const u = new URL(location.href); u.searchParams.delete('embed'); window.open(u.toString(), '_blank', 'noopener'); }
+      down = null;
+    });
+    (function loop(){ requestAnimationFrame(loop);
+      const a = Math.sin((performance.now()-t0)/1000*0.25)*0.28;
+      camera.position.copy(controls.target).add(off0.clone().applyAxisAngle(up, a)); camera.lookAt(controls.target);
+      wn.offset.x += 0.00004; renderer.render(scene, camera); })();
+    return;
+  }
+  (function loop(){ requestAnimationFrame(loop); const dt = clock.getDelta(); wn.offset.x += dt*0.004; wn.offset.y += dt*0.002; controls.update(); renderer.render(scene, camera); })();
+})().catch(e => { setLoad('Error al cargar el 3D: ' + e.message); console.error(e); });
+</script>
+</body>
+</html>
